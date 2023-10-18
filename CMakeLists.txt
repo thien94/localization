@@ -1,8 +1,10 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.5)
 project(localization)
 
 # list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules )
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
+set(CMAKE_BUILD_TYPE "release")
+set(CMAKE_CXX_FLAGS "-std=c++14 -Wall -O3 -march=native")
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -18,14 +20,13 @@ find_package(catkin REQUIRED COMPONENTS
     roscpp
     rospy
     std_msgs
+    uwb_driver
 )
-
-set(CMAKE_CXX_FLAGS "-std=c++11 -Wall -O3 -march=native")
 
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(G2O REQUIRED)
-find_package(Eigen3 3.2 REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(Cholmod REQUIRED)
 find_package(CSPARSE REQUIRED)
 
@@ -126,6 +127,7 @@ catkin_package(
 ## Your package locations should be listed before other locations
 include_directories(
     ${catkin_INCLUDE_DIRS}
+    ${G2O_INCLUDE_DIR}
     ${PROJECT_SOURCE_DIR}/src/types
     ${PROJECT_SOURCE_DIR}/src/localization
 )
@@ -161,6 +163,7 @@ add_dependencies(localization_node
 target_link_libraries(localization_node
     ${EIGEN3_LIBRARIES}
     ${catkin_LIBRARIES}
+    ${G2O_LIBRARIES}
     localization
 )
 

@@ -125,7 +125,7 @@ namespace g2o
 
     void EdgeSE3RangeOffset::computeError()
     {
-        Vector3D dt = _cacheFrom->n2w().translation() - _cacheTo->n2w().translation();
+        Eigen::Vector3d dt = _cacheFrom->n2w().translation() - _cacheTo->n2w().translation();
 
         _error[0] = _measurement - dt.norm();
     }

@@ -53,6 +53,7 @@
 #include <g2o/core/optimization_algorithm_gauss_newton.h>
 #include <g2o/solvers/cholmod/linear_solver_cholmod.h>
 #include <g2o/solvers/csparse/linear_solver_csparse.h>
+#include <g2o/solvers/eigen/linear_solver_eigen.h>
 #include <g2o/types/slam3d/types_slam3d.h>
 #include "types_edge_se3range.h"
 #include "types_edge_se3range_offset.h"
@@ -79,11 +80,17 @@
 
 using namespace std;
 
-typedef g2o::BlockSolver_6_3 SE3BlockSolver;
-
-typedef g2o::LinearSolverCholmod<SE3BlockSolver::PoseMatrixType> Solver;
+// typedef g2o::BlockSolver_6_3 SE3BlockSolver;
+// typedef g2o::LinearSolverCholmod<SE3BlockSolver::PoseMatrixType> Solver;
+// typedef g2o::BlockSolver_6_3::PoseMatrixType SE3BlockSolver;
+// typedef g2o::BlockSolver_6_3::LinearSolverType Solver;
 // typedef g2o::LinearSolverCSparse<SE3BlockSolver::PoseMatrixType> Solver;
 
+// typedef g2o::BlockSolver<g2o::BlockSolverTraits<-1, -1> > SE3BlockSolver;
+// typedef g2o::LinearSolverCholmod<SE3BlockSolver::PoseMatrixType> Solver;
+
+typedef g2o::BlockSolver<g2o::BlockSolverTraits<-1, -1> > SlamBlockSolver;
+typedef g2o::LinearSolverEigen<SlamBlockSolver::PoseMatrixType> SlamLinearSolver;
 
 int test();
 
@@ -159,10 +166,6 @@ private:
     double minimum_optimize_error;
 
 // for g2o solver
-    Solver *solver;
-
-    SE3BlockSolver *se3blockSolver;
-
     g2o::OptimizationAlgorithmLevenberg *optimizationsolver;
 
     g2o::SparseOptimizer optimizer;

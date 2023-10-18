@@ -1,6 +1,11 @@
 # localization
 
-Localization ROS package for range sensors, i.e. ultra wide-band (UWB).
+*Ongoing development*
+
+Updated version of the [`localization`](https://github.com/sair-lab/localization.git) - A localization ROS package for range sensors, i.e. ultra wide-band (UWB). New functionalities include:
+- [x] Compilable with Ubuntu 20.04
+- [ ] Run examples for [MCD-VIRAL dataset](https://mcdviral.github.io/)
+- [ ] Run examples for [NTU-VIRAL dataset](https://ntu-aris.github.io/ntu_viral_dataset/)
 
 This repo also provides sensor fusion for multi-source, e.g. Optical Flow and Visual SLAM.
 

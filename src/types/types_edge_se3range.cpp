@@ -108,7 +108,7 @@ namespace g2o
 
         const VertexSE3* v2 = dynamic_cast<const VertexSE3*>(_vertices[1]);
 
-        Vector3D dt = (v1->estimate() * offset[0]).translation() - (v2->estimate() * offset[1]).translation();
+        Eigen::Vector3d dt = (v1->estimate() * offset[0]).translation() - (v2->estimate() * offset[1]).translation();
 
         _error[0] = _measurement - dt.norm();
     }

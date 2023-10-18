@@ -39,15 +39,19 @@ Localization::Localization(ros::NodeHandle n)
 
     number_measurements = 0;
 
-
 // For g2o optimizer
-    solver = new Solver();
 
-    solver->setBlockOrdering(false);
-
-    se3blockSolver = new SE3BlockSolver(solver);
-
-    optimizationsolver = new g2o::OptimizationAlgorithmLevenberg(se3blockSolver);
+    // Solver *solver;
+    // SE3BlockSolver *se3blockSolver;
+    // solver = new Solver();
+    // solver->setBlockOrdering(false);
+    // se3blockSolver = new SE3BlockSolver(solver);
+    // optimizationsolver = new g2o::OptimizationAlgorithmLevenberg(se3blockSolver);
+    
+    auto linear_solver = g2o::make_unique<SlamLinearSolver>();
+    linear_solver->setBlockOrdering(false);
+    g2o::OptimizationAlgorithmLevenberg* optimizationsolver = new g2o::OptimizationAlgorithmLevenberg(
+        g2o::make_unique<SlamBlockSolver>(std::move(linear_solver)));
 
     optimizer.setAlgorithm(optimizationsolver);
 
@@ -630,7 +634,8 @@ inline g2o::EdgeSE3Range* Localization::create_range_edge(g2o::VertexSE3* vertex
 inline void Localization::save_file(geometry_msgs::PoseStamped pose, string filename)
 {
     file.open(filename.c_str(), ios::app);
-    file<<boost::format("%.9f") % (pose.header.stamp.toSec())<<" "
+    file.precision(9);
+    file<<pose.header.stamp.toSec()<<" "
         <<pose.pose.position.x<<" "
         <<pose.pose.position.y<<" "
         <<pose.pose.position.z<<" "

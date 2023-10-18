@@ -20,7 +20,6 @@ TARGET_LINK_LIBRARIES(localization
 	g2o_solver_csparse
 	g2o_stuff
 	g2o_csparse_extension
-	csparse
 )
 
 # INSTALL(TARGETS localization
@@ -29,6 +28,6 @@ TARGET_LINK_LIBRARIES(localization
 #   ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
 # )
 
-FILE(GLOB headers "${CMAKE_CURRENT_SOURCE_DIR}/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/*.hpp")
+FILE(GLOB ${PROJECT_NAME}_headers "${CMAKE_CURRENT_SOURCE_DIR}/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 # INSTALL(FILES ${headers} DESTINATION ${CMAKE_INSTALL_PREFIX}/include/g2o/types/sba)
