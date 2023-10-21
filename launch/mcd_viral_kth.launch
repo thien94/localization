@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<launch>
+    <param name ="/use_sim_time" value="true"/>
+
+    <rosparam file="$(find localization)/cfg/mcd_kth.yaml" command="load" />
+  
+    <node pkg="localization" type="localization_node" name="localization_node" output="screen">
+        <rosparam command="delete" param="topic" />
+        <rosparam file="$(find localization)/cfg/mcd_viral.yaml" command="load" />
+        <!--<param name="log/filename_prefix" value="/home/cartin/results/mcd_viral/kth_day_10" /> --> <!-- 06 09 10 -->
+        <param name="log/filename_prefix" value="/home/cartin/results/mcd_viral/kth_night_05" />  <!-- 01 04 05 -->
+    </node>
+
+    <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="localization_trajectory_server">
+        <param name="/target_frame_name" value="uwb" />
+        <param name="/source_frame_name" value="world" />
+        <param name="/trajectory_update_rate" value="20.0" />
+        <param name="/trajectory_publish_rate" value="20.0" />
+    </node>
+
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find localization)/example.rviz" />
+
+</launch>
+
+

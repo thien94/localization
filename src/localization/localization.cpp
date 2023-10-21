@@ -69,7 +69,7 @@ Localization::Localization(ros::NodeHandle n)
     if(n.param("optimizer/maximum_iteration", iteration_max, 20))
         ROS_WARN("Using optimizer maximum iteration: %d", iteration_max);
 
-    if(n.param("optimizer/minimum_optimize_error", minimum_optimize_error, 1000.0))
+    if(n.param("optimizer/minimum_optimize_error", minimum_optimize_error, 1e6))
         ROS_WARN("Will skip estimation if optimization error is larger than: %f", minimum_optimize_error);
 
 // For robots
@@ -296,80 +296,86 @@ void Localization::addPoseEdge(const geometry_msgs::PoseWithCovarianceStamped::C
 
 
 
-
-#ifdef TIME_DOMAIN
-void Localization::addRangeEdge(const uwb_driver::UwbRange::ConstPtr& uwb)
-#else
-void Localization::addRangeEdge(const bitcraze_lps_estimator::UwbRange::ConstPtr& uwb)
-#endif
+#ifdef LINK_TRACKP
+void Localization::addRangeEdge(const nlink_parser::LinktrackNodeframe3& uwb)
 {
+    ROS_INFO("%d Received new UWB data from tag %d to %d anchor(s)", number_measurements, uwb.id, uwb.nodes.size());
 
     ++number_measurements;
+    int tag_id = uwb.id;
+    int robot_id = self_id;
+    int num_connected_anchors = uwb.nodes.size();
 
-
-    double distance_estimation= (robots.at(uwb->requester_id).last_vertex()->estimate().translation() -
-                                 robots.at(uwb->responder_id).last_vertex()->estimate().translation()).norm();
-
-    if (number_measurements > trajectory_length && abs(distance_estimation-uwb->distance) > distance_outlier)
+    if (num_connected_anchors == 0)
     {
-        ROS_WARN("Reject ID: %d measurement: %fm", uwb->responder_id, uwb->distance);
+        ROS_WARN("Reject uwb msg with %d anchors, tag: %d", num_connected_anchors, tag_id);
         return;
     }
 
+    for (int id = 0; id < num_connected_anchors; id++)
+    {
+        int anchor_id = uwb.nodes[id].id;
+        double uwb_dis = uwb.nodes[id].dis;
+        double est_dis = (robots.at(robot_id).last_vertex()->estimate().translation() -
+                                robots.at(anchor_id).last_vertex()->estimate().translation()).norm();
 
-    double dt_requester = uwb->header.stamp.toSec() - robots.at(uwb->requester_id).last_header().stamp.toSec();
-    double dt_responder = uwb->header.stamp.toSec() - robots.at(uwb->responder_id).last_header().stamp.toSec();
-    double distance_cov = pow(uwb->distance_err, 2);
-    double cov_requester = pow(robot_max_velocity*dt_requester/3, 2); //3 sigma priciple
+        // if (number_measurements > trajectory_length && abs(est_dis - uwb_dis) > distance_outlier)
+        // {
+        //     ROS_WARN("Reject anchor ID: %d measurement: %fm", anchor_id, uwb_dis);
+        //     return;
+        // }
 
-    auto vertex_last_requester = robots.at(uwb->requester_id).last_vertex();
-    auto vertex_last_responder = robots.at(uwb->responder_id).last_vertex();
-    auto vertex_responder = robots.at(uwb->responder_id).new_vertex(sensor_type.range, uwb->header, optimizer);
-     
-    auto frame_id = robots.at(uwb->requester_id).last_header().frame_id;
+        double dt_requester = uwb.header.stamp.toSec() - robots.at(robot_id).last_header().stamp.toSec();
+        double dt_responder = uwb.header.stamp.toSec() - robots.at(anchor_id).last_header().stamp.toSec();
+        double distance_cov = 1;// pow(0.2, 2);
+        double cov_requester = 1;//pow(robot_max_velocity * dt_requester / 3, 2); //3 sigma priciple
 
-    if( (frame_id.find(uwb->header.frame_id)!=string::npos) || (frame_id.find("none")!=string::npos))
-    {    
-        auto vertex_requester = robots.at(uwb->requester_id).new_vertex(sensor_type.range, uwb->header, optimizer);
+        auto vertex_last_requester = robots.at(robot_id).last_vertex();
+        auto vertex_last_responder = robots.at(anchor_id).last_vertex();
+        auto vertex_responder = robots.at(anchor_id).new_vertex(sensor_type.range, uwb.header, optimizer);
+    
+        auto frame_id = robots.at(robot_id).last_header().frame_id;
 
-        auto edge = create_range_edge(vertex_requester, vertex_responder, uwb->distance, distance_cov);
+        if ((frame_id.find(uwb.header.frame_id) != string::npos) || (frame_id.find("none") != string::npos))
+        {    
+            auto vertex_requester = robots.at(robot_id).new_vertex(sensor_type.range, uwb.header, optimizer);
 
-        if(uwb->antenna > 0)
-            edge->setVertexOffset(0, offsets[uwb->antenna-1]);
-        
-        optimizer.addEdge(edge);
+            auto edge = create_range_edge(vertex_requester, vertex_responder, uwb_dis, distance_cov);
 
-        auto edge_requester_range = create_range_edge(vertex_last_requester, vertex_requester, 0, cov_requester);
+            // edge->setVertexOffset(0, offsets[tag_id]);
+            
+            optimizer.addEdge(edge);
 
-        optimizer.addEdge(edge_requester_range); 
+            auto edge_requester_range = create_range_edge(vertex_last_requester, vertex_requester, 0, cov_requester);
 
-        if(uwb->antenna > 0)
-            ROS_INFO("added two requester range edge on id: <%d> with offsets %d <%.2f, %.2f, %.2f> at %.3f;",
-                uwb->responder_id, uwb->antenna-1, offsets[uwb->antenna-1](0,3), offsets[uwb->antenna-1](1,3), offsets[uwb->antenna-1](2,3), dt_requester);
+            optimizer.addEdge(edge_requester_range); 
+
+            // if(tag_id > 0)
+            //     ROS_INFO("added two requester range edge on id: <%d> with offsets %d <%.2f, %.2f, %.2f> at %.3f;",
+            //         anchor_id, tag_id, offsets[tag_id](0,3), offsets[tag_id](1,3), offsets[tag_id](2,3), dt_requester);
+            // else
+                ROS_INFO("added two requester range edge on id: <%d> , dis %fm", anchor_id, uwb_dis);
+        }
         else
-            ROS_INFO("added two requester range edge on id: <%d> ", uwb->responder_id);
-    }
-    else
-    {
-        auto edge = create_range_edge(vertex_last_requester, vertex_responder, uwb->distance, distance_cov + cov_requester);
+        {
+            auto edge = create_range_edge(vertex_last_requester, vertex_responder, uwb_dis, distance_cov + cov_requester);
 
-        optimizer.addEdge(edge); // decrease computation
+            optimizer.addEdge(edge); // decrease computation
 
-        ROS_INFO("added requester edge with id: <%d>", uwb->responder_id);
+            ROS_INFO("added requester edge with id: <%d>", anchor_id);
 
+        }
 
-    }
+        if (!robots.at(anchor_id).is_static())
+        {
+            double cov_responder = pow(robot_max_velocity * dt_responder/3, 2); //3 sigma priciple
 
+            auto edge_responder_range = create_range_edge(vertex_last_responder, vertex_responder, 0, cov_responder);
 
-    if (!robots.at(uwb->responder_id).is_static())
-    {
-        double cov_responder = pow(robot_max_velocity*dt_responder/3, 2); //3 sigma priciple
+            optimizer.addEdge(edge_responder_range);
 
-        auto edge_responder_range = create_range_edge(vertex_last_responder, vertex_responder, 0, cov_responder);
-
-        optimizer.addEdge(edge_responder_range);
-
-        ROS_INFO("added responder trajectory edge;");
+            ROS_INFO("added responder trajectory edge;");
+        }
     }
         
     if (publish_range && number_measurements > trajectory_length)
@@ -378,6 +384,89 @@ void Localization::addRangeEdge(const bitcraze_lps_estimator::UwbRange::ConstPtr
         publish();
     }
 }
+#else
+    #ifdef TIME_DOMAIN
+    void Localization::addRangeEdge(const uwb_driver::UwbRange::ConstPtr& uwb)
+    #else
+    void Localization::addRangeEdge(const bitcraze_lps_estimator::UwbRange::ConstPtr& uwb)
+    #endif
+    {
+
+        ++number_measurements;
+
+
+        double distance_estimation= (robots.at(uwb->requester_id).last_vertex()->estimate().translation() -
+                                    robots.at(uwb->responder_id).last_vertex()->estimate().translation()).norm();
+
+        if (number_measurements > trajectory_length && abs(distance_estimation-uwb->distance) > distance_outlier)
+        {
+            ROS_WARN("Reject ID: %d measurement: %fm", uwb->responder_id, uwb->distance);
+            return;
+        }
+
+
+        double dt_requester = uwb->header.stamp.toSec() - robots.at(uwb->requester_id).last_header().stamp.toSec();
+        double dt_responder = uwb->header.stamp.toSec() - robots.at(uwb->responder_id).last_header().stamp.toSec();
+        double distance_cov = pow(uwb->distance_err, 2);
+        double cov_requester = pow(robot_max_velocity*dt_requester/3, 2); //3 sigma priciple
+
+        auto vertex_last_requester = robots.at(uwb->requester_id).last_vertex();
+        auto vertex_last_responder = robots.at(uwb->responder_id).last_vertex();
+        auto vertex_responder = robots.at(uwb->responder_id).new_vertex(sensor_type.range, uwb->header, optimizer);
+        
+        auto frame_id = robots.at(uwb->requester_id).last_header().frame_id;
+
+        if( (frame_id.find(uwb->header.frame_id)!=string::npos) || (frame_id.find("none")!=string::npos))
+        {    
+            auto vertex_requester = robots.at(uwb->requester_id).new_vertex(sensor_type.range, uwb->header, optimizer);
+
+            auto edge = create_range_edge(vertex_requester, vertex_responder, uwb->distance, distance_cov);
+
+            if(uwb->antenna > 0)
+                edge->setVertexOffset(0, offsets[uwb->antenna-1]);
+            
+            optimizer.addEdge(edge);
+
+            auto edge_requester_range = create_range_edge(vertex_last_requester, vertex_requester, 0, cov_requester);
+
+            optimizer.addEdge(edge_requester_range); 
+
+            if(uwb->antenna > 0)
+                ROS_INFO("added two requester range edge on id: <%d> with offsets %d <%.2f, %.2f, %.2f> at %.3f;",
+                    uwb->responder_id, uwb->antenna-1, offsets[uwb->antenna-1](0,3), offsets[uwb->antenna-1](1,3), offsets[uwb->antenna-1](2,3), dt_requester);
+            else
+                ROS_INFO("added two requester range edge on id: <%d> ", uwb->responder_id);
+        }
+        else
+        {
+            auto edge = create_range_edge(vertex_last_requester, vertex_responder, uwb->distance, distance_cov + cov_requester);
+
+            optimizer.addEdge(edge); // decrease computation
+
+            ROS_INFO("added requester edge with id: <%d>", uwb->responder_id);
+
+
+        }
+
+
+        if (!robots.at(uwb->responder_id).is_static())
+        {
+            double cov_responder = pow(robot_max_velocity*dt_responder/3, 2); //3 sigma priciple
+
+            auto edge_responder_range = create_range_edge(vertex_last_responder, vertex_responder, 0, cov_responder);
+
+            optimizer.addEdge(edge_responder_range);
+
+            ROS_INFO("added responder trajectory edge;");
+        }
+            
+        if (publish_range && number_measurements > trajectory_length)
+        {
+            solve();
+            publish();
+        }
+    }
+#endif
 
 #ifdef RELATIVE_LOCALIZATION
 void Localization::addRLRangeEdge(const uwb_reloc::uwbTalkData::ConstPtr& uwb)
@@ -502,7 +591,9 @@ void Localization::addLidarEdge(const geometry_msgs::PoseWithCovarianceStamped::
 
 void Localization::addImuEdge(const sensor_msgs::Imu::ConstPtr& Imu_)
 {
-    if (robots.at(self_id).last_header().frame_id.find(Imu_->header.frame_id) == string::npos)
+    // ROS_INFO("Received new imu data");
+
+    // if (robots.at(self_id).last_header().frame_id.find(Imu_->header.frame_id) == string::npos)
     {
         robots.at(self_id).append_last_header(Imu_->header.frame_id);
 
@@ -634,14 +725,15 @@ inline g2o::EdgeSE3Range* Localization::create_range_edge(g2o::VertexSE3* vertex
 inline void Localization::save_file(geometry_msgs::PoseStamped pose, string filename)
 {
     file.open(filename.c_str(), ios::app);
-    file.precision(9);
-    file<<pose.header.stamp.toSec()<<" "
-        <<pose.pose.position.x<<" "
-        <<pose.pose.position.y<<" "
-        <<pose.pose.position.z<<" "
-        <<pose.pose.orientation.x<<" "
-        <<pose.pose.orientation.y<<" "
-        <<pose.pose.orientation.z<<" "
+    // file.precision(9);
+    file<< std::fixed <<setprecision(9);
+    file<<pose.header.stamp.toSec()<<","
+        <<pose.pose.position.x<<","
+        <<pose.pose.position.y<<","
+        <<pose.pose.position.z<<","
+        <<pose.pose.orientation.x<<","
+        <<pose.pose.orientation.y<<","
+        <<pose.pose.orientation.z<<","
         <<pose.pose.orientation.w<<endl;
     file.close();
 }
@@ -655,21 +747,22 @@ void Localization::set_file()
     time_t now;
     now = time(NULL);
     tim = *(localtime(&now));
-    strftime(s,30,"_%Y_%b_%d_%H_%M_%S.txt",&tim);
+    strftime(s,30,"_%Y_%b_%d_%H_%M_%S.csv",&tim);
     realtime_filename = name_prefix+"_realtime" + string(s);
-    optimized_filename = name_prefix+"_optimized" + string(s);
+    // optimized_filename = name_prefix+"_optimized" + string(s);
+    optimized_filename = name_prefix+"_range_only.csv";
 
-    file.open(realtime_filename.c_str(), ios::trunc|ios::out);
-    file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
-    file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
-    file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
-    file.close();
+    // file.open(realtime_filename.c_str(), ios::trunc|ios::out);
+    // file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
+    // file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
+    // file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
+    // file.close();
 
-    file.open(optimized_filename.c_str(), ios::trunc|ios::out);
-    file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
-    file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
-    file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
-    file.close();
+    // file.open(optimized_filename.c_str(), ios::trunc|ios::out);
+    // file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
+    // file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
+    // file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
+    // file.close();
 
     ROS_WARN("Loging to file: %s",realtime_filename.c_str());
     ROS_WARN("Loging to file: %s",optimized_filename.c_str());
@@ -683,28 +776,28 @@ void Localization::set_file(std::vector<double> antennaOffset)
     time_t now;
     now = time(NULL);
     tim = *(localtime(&now));
-    strftime(s,30,"_%Y_%b_%d_%H_%M_%S.txt",&tim);
+    strftime(s,30,"_%Y_%b_%d_%H_%M_%S.csv",&tim);
     realtime_filename = name_prefix+"_realtime" + string(s);
     optimized_filename = name_prefix+"_optimized" + string(s);
 
-    file.open(realtime_filename.c_str(), ios::trunc|ios::out);
-    file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
-    file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
-    file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
-    file.close();
+    // file.open(realtime_filename.c_str(), ios::trunc|ios::out);
+    // file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
+    // file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
+    // file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
+    // file.close();
 
-    file.open(optimized_filename.c_str(), ios::trunc|ios::out);
-    file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
-    file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
-    file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
-    file.close();
+    // file.open(optimized_filename.c_str(), ios::trunc|ios::out);
+    // file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
+    // file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
+    // file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
+    // file.close();
 
-    file.open(optimized_filename.c_str(), ios::trunc|ios::out);
-    file<<"# "<<"antenna offsets: ";
-    for(unsigned int i = 0; i < antennaOffset.size() - 1; i++)
-        file << antennaOffset[i] << ",";
-    file << antennaOffset[antennaOffset.size()-1] << "\n";
-    file.close();
+    // file.open(optimized_filename.c_str(), ios::trunc|ios::out);
+    // file<<"# "<<"antenna offsets: ";
+    // for(unsigned int i = 0; i < antennaOffset.size() - 1; i++)
+    //     file << antennaOffset[i] << ",";
+    // file << antennaOffset[antennaOffset.size()-1] << "\n";
+    // file.close();
 
     ROS_WARN("Loging to file: %s",realtime_filename.c_str());
     ROS_WARN("Loging to file: %s",optimized_filename.c_str());

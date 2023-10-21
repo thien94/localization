@@ -29,9 +29,6 @@
 #ifndef LOCALIZATION_H
 #define LOCALIZATION_H
 
-// #define TIME_DOMAIN
-//comment above line if you want to use uwb from timedomain
-
 #include <iostream>
 #include <sstream>
 #include <string.h>
@@ -64,6 +61,9 @@
 #include <geometry_msgs/TwistWithCovarianceStamped.h>
 #ifdef TIME_DOMAIN
 #include <uwb_driver/UwbRange.h>
+#elif LINK_TRACKP
+#include <nlink_parser/LinktrackNodeframe2.h>
+#include <nlink_parser/LinktrackNodeframe3.h>
 #else
 #include <bitcraze_lps_estimator/UwbRange.h>
 #endif
@@ -119,6 +119,8 @@ public:
 
 #ifdef TIME_DOMAIN
     void addRangeEdge(const uwb_driver::UwbRange::ConstPtr&);
+#elif LINK_TRACKP
+    void addRangeEdge(const nlink_parser::LinktrackNodeframe3&);
 #else
     void addRangeEdge(const bitcraze_lps_estimator::UwbRange::ConstPtr&);
 #endif

@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
     rospy
     std_msgs
     uwb_driver
+    nlink_parser
 )
 
 ## System dependencies are found with CMake's conventions
@@ -132,8 +133,9 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/src/localization
 )
 
-# Uncomment this definition to use decawave's uwb radios
-add_definitions(-DTIME_DOMAIN)
+# Uncomment these definitions to use decawave's uwb radios
+add_definitions(-DLINK_TRACKP)
+# add_definitions(-DTIME_DOMAIN)
 
 # Uncomment this definition to enable relative localization
 # add_definitions(-DRELATIVE_LOCALIZATION)
