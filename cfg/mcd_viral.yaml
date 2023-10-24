@@ -1,7 +1,7 @@
 # parameters for robots
 robot:
-  trajectory_length: 12
-  maximum_velocity: 10.0
+  trajectory_length: 20
+  maximum_velocity: 20.0
 
 # parameters for g2o optimizer
 optimizer:
@@ -12,14 +12,15 @@ optimizer:
 topic:
   range: /ltp_tag0/nlnf3
   imu: /vn100/imu_ #for ntu sequences
-  # imu: /vn200/imu  #for kth and tuhh
+  # imu: /vn200/imu_  #for kth and tuhh
 
 publish_flag:
   tf: true
   # publish estimation when the following topics are received.
   # topics available in {range, pose, twist, imu}. false in default
-  range: true
+  range: false
   imu: false
+  odom: true
 
 # fused pose topic frame
 frame:

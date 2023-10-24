@@ -7,8 +7,9 @@
     <node pkg="localization" type="localization_node" name="localization_node" output="screen">
         <rosparam command="delete" param="topic" />
         <rosparam file="$(find localization)/cfg/mcd_viral.yaml" command="load" />
-        <!-- <param name="log/filename_prefix" value="/home/cartin/results/mcd_viral/ntu_day_10" /> --> <!-- 01 02 10 -->
-        <param name="log/filename_prefix" value="/home/cartin/results/mcd_viral/ntu_night_13" />  <!-- 04 08 13 -->
+        <!-- day: 01 02 10, night: 04 08 13 -->
+        <!-- <param name="log/filename_prefix" value="/home/cartin/results/mcd_viral/ntu_day_10" />  -->
+        <param name="log/filename_prefix" value="/home/cartin/results/mcd_viral/ntu_night_04" /> 
     </node>
 
     <node pkg="hector_trajectory_server" type="hector_trajectory_server" name="localization_trajectory_server">

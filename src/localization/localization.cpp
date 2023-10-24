@@ -150,6 +150,9 @@ Localization::Localization(ros::NodeHandle n)
     if(n.param<bool>("publish_flag/pose", publish_pose, false))
         ROS_WARN("Using publish_flag/pose: %s", publish_pose ? "true":"false");
 
+    if(n.param<bool>("publish_flag/odom", publish_odom, false))
+        ROS_WARN("Using publish_flag/odom: %s", publish_odom ? "true":"false");
+
     if(n.param<bool>("publish_flag/twist", publish_twist, false))
         ROS_WARN("Using publish_flag/twist: %s", publish_twist ? "true":"false");
 	
@@ -225,8 +228,9 @@ void Localization::publish()
 
     if(flag_save_file)
     {
-        save_file(pose, realtime_filename);
-        save_file(path->poses[trajectory_length/2], optimized_filename);        
+        // save_file_csv(pose, realtime_filename);
+        save_file_csv(path->poses[trajectory_length/2], opt_filename_csv);
+        save_file_tum(path->poses[trajectory_length/2], opt_filename_tum);
     }
 
     if(publish_tf)
@@ -294,6 +298,48 @@ void Localization::addPoseEdge(const geometry_msgs::PoseWithCovarianceStamped::C
 }
 
 
+void Localization::addOdomEdge(const nav_msgs::Odometry::ConstPtr& odom_msg_)
+{
+    // if (robots.at(self_id).last_header().seq <= 10)
+    if (number_measurements < trajectory_length + 1)
+        return;
+    
+    nav_msgs::Odometry odom_msg(*odom_msg_);
+
+    // if (robots.at(self_id).last_header().frame_id.find(odom_msg.header.frame_id) == string::npos)
+    {
+        robots.at(self_id).append_last_header(odom_msg.header.frame_id);
+
+        auto last_vertex = robots.at(self_id).last_vertex(sensor_type.range);
+
+        static Eigen::Isometry3d W_T_C0 = robots.at(self_id).last_vertex()->estimate();
+
+        Eigen::Isometry3d C0_T_Ck = Eigen::Isometry3d::Identity();
+
+        tf::poseMsgToEigen(odom_msg.pose.pose, C0_T_Ck);
+        
+        Eigen::Isometry3d W_T_Ck = W_T_C0 * C0_T_Ck;
+
+        last_vertex->setEstimate(W_T_Ck);
+
+        Eigen::MatrixXd information = Eigen::MatrixXd::Identity(6,6);
+        
+        g2o::EdgeSE3Prior* edgeprior = new g2o::EdgeSE3Prior();
+        edgeprior->setInformation(information);
+        edgeprior->vertices()[0]= last_vertex;
+        edgeprior->setMeasurement(W_T_Ck);
+        edgeprior->setParameterId(0,0);
+        optimizer.addEdge(edgeprior);
+
+        ROS_INFO("added odom edge id: %d", odom_msg.header.seq);
+    }
+
+    if (publish_odom)
+    {
+        solve();
+        publish();
+    }
+}
 
 
 #ifdef LINK_TRACKP
@@ -303,7 +349,6 @@ void Localization::addRangeEdge(const nlink_parser::LinktrackNodeframe3& uwb)
 
     ++number_measurements;
     int tag_id = uwb.id;
-    int robot_id = self_id;
     int num_connected_anchors = uwb.nodes.size();
 
     if (num_connected_anchors == 0)
@@ -316,7 +361,7 @@ void Localization::addRangeEdge(const nlink_parser::LinktrackNodeframe3& uwb)
     {
         int anchor_id = uwb.nodes[id].id;
         double uwb_dis = uwb.nodes[id].dis;
-        double est_dis = (robots.at(robot_id).last_vertex()->estimate().translation() -
+        double est_dis = (robots.at(self_id).last_vertex()->estimate().translation() -
                                 robots.at(anchor_id).last_vertex()->estimate().translation()).norm();
 
         // if (number_measurements > trajectory_length && abs(est_dis - uwb_dis) > distance_outlier)
@@ -325,28 +370,32 @@ void Localization::addRangeEdge(const nlink_parser::LinktrackNodeframe3& uwb)
         //     return;
         // }
 
-        double dt_requester = uwb.header.stamp.toSec() - robots.at(robot_id).last_header().stamp.toSec();
+        double dt_requester = uwb.header.stamp.toSec() - robots.at(self_id).last_header().stamp.toSec();
         double dt_responder = uwb.header.stamp.toSec() - robots.at(anchor_id).last_header().stamp.toSec();
-        double distance_cov = 1;// pow(0.2, 2);
-        double cov_requester = 1;//pow(robot_max_velocity * dt_requester / 3, 2); //3 sigma priciple
+        double distance_cov = num_connected_anchors;// pow(0.2, 2);
+        double cov_requester = num_connected_anchors;//pow(robot_max_velocity * dt_requester / 3, 2); //3 sigma priciple
 
-        auto vertex_last_requester = robots.at(robot_id).last_vertex();
+        auto vertex_last_requester = robots.at(self_id).last_vertex();
         auto vertex_last_responder = robots.at(anchor_id).last_vertex();
         auto vertex_responder = robots.at(anchor_id).new_vertex(sensor_type.range, uwb.header, optimizer);
     
-        auto frame_id = robots.at(robot_id).last_header().frame_id;
+        auto frame_id = robots.at(self_id).last_header().frame_id;
 
         if ((frame_id.find(uwb.header.frame_id) != string::npos) || (frame_id.find("none") != string::npos))
         {    
-            auto vertex_requester = robots.at(robot_id).new_vertex(sensor_type.range, uwb.header, optimizer);
+            auto vertex_requester = robots.at(self_id).new_vertex(sensor_type.range, uwb.header, optimizer);
 
             auto edge = create_range_edge(vertex_requester, vertex_responder, uwb_dis, distance_cov);
 
             // edge->setVertexOffset(0, offsets[tag_id]);
+
+            edge->setRobustKernel(new g2o::RobustKernelCauchy());
             
             optimizer.addEdge(edge);
 
             auto edge_requester_range = create_range_edge(vertex_last_requester, vertex_requester, 0, cov_requester);
+            
+            edge_requester_range->setRobustKernel(new g2o::RobustKernelCauchy());
 
             optimizer.addEdge(edge_requester_range); 
 
@@ -593,7 +642,7 @@ void Localization::addImuEdge(const sensor_msgs::Imu::ConstPtr& Imu_)
 {
     // ROS_INFO("Received new imu data");
 
-    // if (robots.at(self_id).last_header().frame_id.find(Imu_->header.frame_id) == string::npos)
+    if (robots.at(self_id).last_header().frame_id.find(Imu_->header.frame_id) == string::npos)
     {
         robots.at(self_id).append_last_header(Imu_->header.frame_id);
 
@@ -606,11 +655,15 @@ void Localization::addImuEdge(const sensor_msgs::Imu::ConstPtr& Imu_)
         current_pose.translation() = last_vertex->estimate().translation();
 
         last_vertex->setEstimate(current_pose);
-
-        Eigen::MatrixXd  information = Eigen::MatrixXd::Zero(6,6);
-        information(3,3)= 1.0/Imu_->orientation_covariance[0];
-        information(4,4)= 1.0/Imu_->orientation_covariance[4];
-        information(5,5)= 1.0/Imu_->orientation_covariance[8];// roll, pitch, yaw
+        
+        Eigen::MatrixXd information = Eigen::MatrixXd::Zero(6,6);
+        information(3,3) = 1e1;
+        information(4,4) = 1e1;
+        information(5,5) = 1e1;
+        // Eigen::MatrixXd information = Eigen::MatrixXd::Zero(6,6);
+        // information(3,3)= 1.0/Imu_->orientation_covariance[0];
+        // information(4,4)= 1.0/Imu_->orientation_covariance[4];
+        // information(5,5)= 1.0/Imu_->orientation_covariance[8];// roll, pitch, yaw
         
         g2o::EdgeSE3Prior* edgeprior = new g2o::EdgeSE3Prior();
         edgeprior->setInformation(information);
@@ -722,8 +775,30 @@ inline g2o::EdgeSE3Range* Localization::create_range_edge(g2o::VertexSE3* vertex
 }
 
 
-inline void Localization::save_file(geometry_msgs::PoseStamped pose, string filename)
+inline void Localization::save_file_tum(geometry_msgs::PoseStamped pose, string filename)
 {
+    if (pose.header.stamp.toSec() <= 1)
+        return;
+    
+    file.open(filename.c_str(), ios::app);
+    // file.precision(9);
+    file<< std::fixed <<setprecision(9);
+    file<<pose.header.stamp.toSec()<<" "
+        <<pose.pose.position.x<<" "
+        <<pose.pose.position.y<<" "
+        <<pose.pose.position.z<<" "
+        <<pose.pose.orientation.x<<" "
+        <<pose.pose.orientation.y<<" "
+        <<pose.pose.orientation.z<<" "
+        <<pose.pose.orientation.w<<endl;
+    file.close();
+}
+
+inline void Localization::save_file_csv(geometry_msgs::PoseStamped pose, string filename)
+{
+    if (pose.header.stamp.toSec() <= 1)
+        return;
+
     file.open(filename.c_str(), ios::app);
     // file.precision(9);
     file<< std::fixed <<setprecision(9);
@@ -738,7 +813,6 @@ inline void Localization::save_file(geometry_msgs::PoseStamped pose, string file
     file.close();
 }
 
-
 void Localization::set_file()
 {
     flag_save_file = true;
@@ -749,8 +823,9 @@ void Localization::set_file()
     tim = *(localtime(&now));
     strftime(s,30,"_%Y_%b_%d_%H_%M_%S.csv",&tim);
     realtime_filename = name_prefix+"_realtime" + string(s);
-    // optimized_filename = name_prefix+"_optimized" + string(s);
-    optimized_filename = name_prefix+"_range_only.csv";
+    // opt_filename_csv = name_prefix+"_optimized" + string(s);
+    opt_filename_csv = name_prefix+"_ro.csv";
+    opt_filename_tum = name_prefix+"_ro.txt";
 
     // file.open(realtime_filename.c_str(), ios::trunc|ios::out);
     // file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
@@ -758,14 +833,14 @@ void Localization::set_file()
     // file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
     // file.close();
 
-    // file.open(optimized_filename.c_str(), ios::trunc|ios::out);
+    // file.open(opt_filename_csv.c_str(), ios::trunc|ios::out);
     // file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
     // file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
     // file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
     // file.close();
 
     ROS_WARN("Loging to file: %s",realtime_filename.c_str());
-    ROS_WARN("Loging to file: %s",optimized_filename.c_str());
+    ROS_WARN("Loging to file: %s",opt_filename_csv.c_str());
 }
 
 void Localization::set_file(std::vector<double> antennaOffset)
@@ -778,7 +853,7 @@ void Localization::set_file(std::vector<double> antennaOffset)
     tim = *(localtime(&now));
     strftime(s,30,"_%Y_%b_%d_%H_%M_%S.csv",&tim);
     realtime_filename = name_prefix+"_realtime" + string(s);
-    optimized_filename = name_prefix+"_optimized" + string(s);
+    opt_filename_csv = name_prefix+"_optimized" + string(s);
 
     // file.open(realtime_filename.c_str(), ios::trunc|ios::out);
     // file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
@@ -786,21 +861,21 @@ void Localization::set_file(std::vector<double> antennaOffset)
     // file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
     // file.close();
 
-    // file.open(optimized_filename.c_str(), ios::trunc|ios::out);
+    // file.open(opt_filename_csv.c_str(), ios::trunc|ios::out);
     // file<<"# "<<"iteration_max:"<<iteration_max<<"\n";
     // file<<"# "<<"trajectory_length:"<<trajectory_length<<"\n";
     // file<<"# "<<"maximum_velocity:"<<robot_max_velocity<<"\n";
     // file.close();
 
-    // file.open(optimized_filename.c_str(), ios::trunc|ios::out);
+    // file.open(opt_filename_csv.c_str(), ios::trunc|ios::out);
     // file<<"# "<<"antenna offsets: ";
     // for(unsigned int i = 0; i < antennaOffset.size() - 1; i++)
-    //     file << antennaOffset[i] << ",";
+    //     file << antennaOffset[i] << " ";
     // file << antennaOffset[antennaOffset.size()-1] << "\n";
     // file.close();
 
     ROS_WARN("Loging to file: %s",realtime_filename.c_str());
-    ROS_WARN("Loging to file: %s",optimized_filename.c_str());
+    ROS_WARN("Loging to file: %s",opt_filename_csv.c_str());
 }
 
 Localization::~Localization()
@@ -809,7 +884,10 @@ Localization::~Localization()
     {
         auto path = robots.at(self_id).vertices2path();
         for (int i = trajectory_length/2; i < trajectory_length; ++i)
-            save_file(path->poses[i], optimized_filename);
-        cout<<"Results Loged to file: "<<optimized_filename<<endl;
+        {
+            save_file_csv(path->poses[i], opt_filename_csv);
+            save_file_tum(path->poses[i], opt_filename_tum);
+        }
+        cout<<"Results Loged to file: "<<opt_filename_csv<<", "<<opt_filename_tum<<endl;
     }
 }

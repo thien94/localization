@@ -44,15 +44,22 @@ int main(int argc, char** argv)
 
     Localization localization(n);
 
-    string pose_topic, range_topic, lidar_topic, imu_topic, twist_topic, relative_topic;
+    string pose_topic, odom_topic, range_topic, lidar_topic, imu_topic, twist_topic, relative_topic;
 
-    ros::Subscriber pose_sub, range_sub, imu_sub, twist_sub, relative_sub;
+    ros::Subscriber pose_sub, odom_sub, range_sub, imu_sub, twist_sub, relative_sub;
 
 
     if(n.getParam("topic/pose", pose_topic))
     {
         pose_sub = n.subscribe(pose_topic, 1000, &Localization::addPoseEdge, &localization);
         ROS_WARN("Subscribing to: %s",pose_topic.c_str());
+    }
+    
+
+    if(n.getParam("topic/odom", odom_topic))
+    {
+        odom_sub = n.subscribe(odom_topic, 1000, &Localization::addOdomEdge, &localization);
+        ROS_WARN("Subscribing to: %s",odom_topic.c_str());
     }
 
     if(n.getParam("topic/range", range_topic))

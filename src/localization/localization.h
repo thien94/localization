@@ -101,6 +101,7 @@ const struct SensorType
     unsigned char range = 2;
     unsigned char twist = 3;
     unsigned char imu = 4;
+    unsigned char odom = 5;
 }sensor_type;
 
 class Localization
@@ -125,6 +126,8 @@ public:
     void addRangeEdge(const bitcraze_lps_estimator::UwbRange::ConstPtr&);
 #endif
     void addPoseEdge(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr&);
+
+    void addOdomEdge(const nav_msgs::Odometry::ConstPtr&);
 
     void addLidarEdge(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& pose_cov_);
 
@@ -177,11 +180,11 @@ private:
     int iteration_max;
 
 // for debug
-    string realtime_filename, optimized_filename, name_prefix, frame_source, frame_target;
+    string realtime_filename, opt_filename_csv, opt_filename_tum, name_prefix, frame_source, frame_target;
 
     ofstream file;
 
-    bool flag_save_file, publish_tf, publish_range, publish_pose, publish_twist, publish_lidar, publish_imu, publish_relative_range;
+    bool flag_save_file, publish_tf, publish_range, publish_pose, publish_odom, publish_twist, publish_lidar, publish_imu, publish_relative_range;
 
     tf::TransformBroadcaster br;
 
@@ -196,7 +199,8 @@ private:
 
     inline Eigen::Isometry3d twist2transform(geometry_msgs::TwistWithCovariance&, Eigen::MatrixXd&, double);
 
-    inline void save_file(geometry_msgs::PoseStamped, string);
+    inline void save_file_csv(geometry_msgs::PoseStamped, string);
+    inline void save_file_tum(geometry_msgs::PoseStamped, string);
 
 public:
     void set_file();
